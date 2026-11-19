@@ -1,7 +1,7 @@
 'use client';
 
 import type { ComponentType } from 'react';
-import { ArrowDownRight, ArrowUpRight, Camera, Droplets, MapPin, PackageCheck, ShoppingBag, Users, Wallet } from 'lucide-react';
+import { ArrowDownRight, ArrowUpRight, Files, Camera, Droplets, MapPin, PackageCheck, ShoppingBag, Users, Wallet } from 'lucide-react';
 import { useLiveDashboard } from '@/lib/hooks';
 import { formatIDR, formatNumber, formatDateTime } from '@/lib/utils';
 import type { SessionUser } from '@/lib/types';
