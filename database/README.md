@@ -1,0 +1,1 @@
+Buat Google Spreadsheet privat. Salin ID spreadsheet ke CONFIG.SPREADSHEET_ID pada Code.gs. Jalankan setupDatabase() sekali. Isi Users_Access dan Master_Booths. passwordHash harus berupa SHA-256 hex digest (helper hash_ tersedia di Code.gs). Jangan publikasikan spreadsheet.
