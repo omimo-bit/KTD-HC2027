@@ -106,7 +106,7 @@ export async function postGas<T>(body: Record<string, unknown>, timeoutMs = 2500
   await sendGasNoCors(body);
 
   const started = Date.now();
-  const waits = [500, 800, 1200, 1800, 2500, 3500, 4500, 5000];
+  const waits = [250, 350, 500, 700, 900, 1200, 1600, 2000];
   for (const delay of waits) {
     if (Date.now() - started + delay > timeoutMs) break;
     await new Promise(resolve => window.setTimeout(resolve, delay));

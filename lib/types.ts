@@ -88,6 +88,7 @@ export interface DriveDoc {
   mimeType: string;
   driveFileId: string;
   url: string;
+  thumbnailUrl?: string;
 }
 
 export interface InventoryItem {

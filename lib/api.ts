@@ -2,9 +2,26 @@ import type { AuthSession, DashboardData, Booth, DriveDoc, InventoryItem } from 
 import { enqueueOfflineRequest } from '@/lib/offline-queue';
 import { requestGas, postGas, sendGasNoCors, bytesToBase64, GasTransportError } from '@/lib/gas-jsonp';
 
+const readCache = new Map<string, { at: number; value: unknown }>();
+const readInflight = new Map<string, Promise<unknown>>();
+const READ_CACHE_MS = 5000;
+
 export async function apiGet<T>(action: string, token: string, params: Record<string, string> = {}): Promise<T> {
-  return requestGas<T>({ action, token, ...params });
+  const key = JSON.stringify([action, token, params]);
+  const cached = readCache.get(key);
+  if (cached && Date.now() - cached.at < READ_CACHE_MS) return cached.value as T;
+  const pending = readInflight.get(key);
+  if (pending) return pending as Promise<T>;
+  const request = requestGas<T>({ action, token, ...params }).then(value => {
+    readCache.set(key, { at: Date.now(), value });
+    return value;
+  }).finally(() => readInflight.delete(key));
+  readInflight.set(key, request);
+  return request;
 }
+
+function invalidateReadCache() { readCache.clear(); }
+
 
 const OFFLINE_QUEUEABLE = new Set([
   'visitorClick', 'recordSale', 'recordSampling', 'redeemPrize', 'saveAttendance',
@@ -21,12 +38,14 @@ function makeRequestId(): string {
 
 export async function apiPost<T>(action: string, token: string, values: Record<string, unknown> = {}): Promise<T> {
   const transient = action === 'logout' || action === 'locationPing';
+  if (!transient) invalidateReadCache();
   const requestId = transient ? '' : String(values.requestId || makeRequestId());
   const body = { action, token, ...values, ...(requestId ? { requestId } : {}) };
   if (transient) { await sendGasNoCors(body); return { sent: true } as T; }
   try {
-    if (action === 'uploadDoc') return await postGas<T>(body, 90000);
-    return await postGas<T>(body, 25000);
+    const result = action === 'uploadDoc' ? await postGas<T>(body, 90000) : await postGas<T>(body, 25000);
+    invalidateReadCache();
+    return result;
   } catch (error) {
     if (error instanceof GasTransportError && OFFLINE_QUEUEABLE.has(action) && typeof window !== 'undefined') {
       await enqueueOfflineRequest({ requestId, body: JSON.stringify(body), createdAt: Date.now() });
@@ -51,6 +70,7 @@ export const login = async (username: string, pin: string): Promise<AuthSession>
 };
 
 export const getDashboard = (token: string) => apiGet<DashboardData>('dashboard', token);
+export const getMapData = (token: string) => apiGet<{ dashboard: DashboardData; locations: import('@/lib/types').StaffLocation[] }>('mapData', token);
 export const getBooths = (token: string) => apiGet<Booth[]>('booths', token);
 export const getDocs = (token: string, venueId = '') => apiGet<DriveDoc[]>('docs', token, venueId ? { venueId } : {});
 export const getInventory = (token: string) => apiGet<InventoryItem[]>('inventory', token);

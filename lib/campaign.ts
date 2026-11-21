@@ -37,16 +37,16 @@ export const DOC_CATEGORIES = [
 
 export const NAV_BY_ROLE: Record<string, { id: string; label: string }[]> = {
   ADMIN: [
-    { id: 'overview', label: 'Control Tower' }, { id: 'map', label: 'Mudik Map' }, { id: 'tracking', label: 'Team Live Tracking' }, { id: 'cctv', label: 'Live CCTV Wall' },
+    { id: 'overview', label: 'Control Tower' }, { id: 'map', label: 'Mudik Map & Team Tracking' }, { id: 'cctv', label: 'Live CCTV Wall' },
     { id: 'clicker', label: 'Visitor Clicker' }, { id: 'sales', label: 'Sales & Sampling' }, { id: 'mobile', label: 'Mobile Selling Log' },
     { id: 'gallery', label: 'Drive Gallery' }, { id: 'field', label: 'Field Operations' }, { id: 'inventory', label: 'Merchandise & Stock' },
     { id: 'users', label: 'User & PIN Access' }, { id: 'venues', label: 'Venue & CCTV Setup' }
   ],
   CLIENT: [
-    { id: 'overview', label: 'Executive Overview' }, { id: 'map', label: 'Mudik Map' }, { id: 'tracking', label: 'Team Live Tracking' }, { id: 'cctv', label: 'Live CCTV Wall' }, { id: 'gallery', label: 'Reports & Gallery' }
+    { id: 'overview', label: 'Executive Overview' }, { id: 'map', label: 'Mudik Map & Team Tracking' }, { id: 'cctv', label: 'Live CCTV Wall' }, { id: 'gallery', label: 'Reports & Gallery' }
   ],
   TL: [
-    { id: 'overview', label: 'Venue Overview' }, { id: 'tracking', label: 'Team Live Tracking' }, { id: 'clicker', label: 'Visitor Clicker' }, { id: 'field', label: 'Attendance & Closing' },
+    { id: 'overview', label: 'Venue Overview' }, { id: 'map', label: 'Venue Map & Team Tracking' }, { id: 'clicker', label: 'Visitor Clicker' }, { id: 'field', label: 'Attendance & Closing' },
     { id: 'inventory', label: 'Stock & Replenishment' }, { id: 'cctv', label: 'Venue CCTV' }, { id: 'gallery', label: 'Documentation' }
   ],
   SPG: [

@@ -76,7 +76,7 @@ function doGet(e) {
     if (p.payload) body = JSON.parse(String(p.payload));
     const action = String(body.action || p.action || 'health');
     if (action === 'health') return output_({ok:true,app:APP.NAME,now:now_(),version:'1.2.0'}, callback);
-    const readOnlyActions = ['health','loginChallenge','loginProof','requestStatus','dashboard','booths','docs','users','inventory','attendance','mySales','venueSales','liveLocations','mobileActivity','inventoryLogs','dailyClosings'];
+    const readOnlyActions = ['health','loginChallenge','loginProof','requestStatus','dashboard','mapData','booths','docs','users','inventory','attendance','mySales','venueSales','liveLocations','mobileActivity','inventoryLogs','dailyClosings'];
     if (readOnlyActions.indexOf(action) < 0) throw new Error('Aksi ini harus dikirim menggunakan POST.');
     body.action = action;
     return output_(apiAction_(body), callback);
@@ -121,6 +121,7 @@ function apiAction_(body) {
     let result;
     switch (action) {
       case 'dashboard': result = getDashboard_(user); break;
+      case 'mapData': requireRole_(user,['ADMIN','CLIENT','TL']); result = getMapData_(user); break;
       case 'booths': result = getBooths_(user); break;
       case 'docs': result = getDocs_(user,body.venueId || ''); break;
       case 'users': requireRole_(user,['ADMIN']); result = getUsers_(); break;
@@ -133,6 +134,7 @@ function apiAction_(body) {
       case 'inventoryLogs': requireRole_(user,['ADMIN','TL','CREW']); result = getInventoryLogs_(user,body.venueId || ''); break;
       case 'dailyClosings': requireRole_(user,['ADMIN','TL']); result = getDailyClosings_(user,body.venueId || ''); break;
       case 'visitorClick': requireRole_(user,['ADMIN','TL']); result = visitorClick_(user,body); break;
+      case 'visitorClickBatch': requireRole_(user,['ADMIN','TL']); result = visitorClickBatch_(user,body); break;
       case 'locationPing': requireRole_(user,['ADMIN','TL','SPG','CREW']); result = saveLocationPing_(user,body); break;
       case 'recordSale': requireRole_(user,['ADMIN','SPG']); result = recordSale_(user,body); break;
       case 'recordSampling': requireRole_(user,['ADMIN','SPG']); result = recordSampling_(user,body); break;
@@ -358,6 +360,19 @@ function getBooths_(user) {
   if(user.role!=='ADMIN' && user.role!=='CLIENT')list=list.filter(b=>String(b.venueId)===user.venueId);
   return list.map(b=>Object.assign({},b,{targetTotal:Number(b.targetBooth||0)+Number(b.targetIDM||0)+Number(b.targetSelling||0)}));
 }
+function getMapData_(user) {
+  const cache = CacheService.getScriptCache();
+  const scope = (user.role === 'TL') ? String(user.venueId || '') : 'ALL';
+  const key = 'mapdata_v1_' + user.role + '_' + scope;
+  try {
+    const cached = cache.get(key);
+    if (cached) return JSON.parse(cached);
+  } catch (e) {}
+  const result = { dashboard: getDashboard_(user), locations: getLiveLocations_(user) };
+  try { cache.put(key, JSON.stringify(result), 5); } catch (e) {}
+  return result;
+}
+
 function getDashboard_(user) {
   const booths=getBooths_(user); const ids=booths.map(b=>String(b.venueId));
   const visitorRows=rows_('Visitors_Log').filter(r=>ids.indexOf(String(r.venueId))>=0);
@@ -478,6 +493,19 @@ function visitorClick_(user,b) {
     return {venueId,metric,total:next,delta:actual};
   } finally { lock.releaseLock(); }
 }
+function visitorClickBatch_(user,b) {
+  const venueId=String(b.venueId||user.venueId); assertVenue_(user,venueId);
+  const metric=String(b.metric||'VISITOR'); if(['VISITOR','UNIQUE_MIRROR','PHOTO_BOOTH'].indexOf(metric)<0)throw new Error('Metric visitor tidak dikenal.');
+  const delta=Math.floor(Number(b.delta||0)); if(delta<1 || delta>100)throw new Error('Batch click harus 1–100 klik.');
+  const lock=LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    const logs=rows_('Visitors_Log').filter(r=>String(r.venueId)===venueId && String(r.metric)===metric);
+    const current=sum_(logs,'delta'); const next=current+delta;
+    append_('Visitors_Log',{id:uuid_(),timestamp:now_(),date:today_(),venueId,userId:user.userId,metric,delta,totalAfter:next,note:'BATCH '+delta+' rapid taps'});
+    return {venueId,metric,total:next,delta};
+  } finally { lock.releaseLock(); }
+}
+
 function recordSale_(user,b) {
   const venueId=String(b.venueId||user.venueId); assertVenue_(user,venueId);
   const venue=rows_('Master_Booths').find(v=>String(v.venueId)===venueId); if(!venue)throw new Error('Venue tidak ditemukan.');
@@ -588,7 +616,9 @@ function uploadDoc_(user,b) {
   const category=String(b.category||'Field Documentation').replace(/[^a-zA-Z0-9 _-]/g,'').slice(0,35);
   const blob=Utilities.newBlob(bytes,mime,category+'_'+original);
   const file=dateFolder.createFile(blob); file.setDescription('Mudik 2027 | '+venue.name+' | '+category+' | '+user.name);
-  const record={id:uuid_(),timestamp:now_(),date,venueId,userId:user.userId,category,fileName:file.getName(),mimeType:mime,driveFileId:file.getId(),url:file.getUrl()};
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const driveId=file.getId();
+  const record={id:uuid_(),timestamp:now_(),date,venueId,userId:user.userId,category,fileName:file.getName(),mimeType:mime,driveFileId:driveId,url:file.getUrl(),thumbnailUrl:'https://drive.google.com/thumbnail?id='+driveId+'&sz=w1200'};
   append_('Drive_Docs',record);
   return {id:record.id,fileName:record.fileName,url:record.url,category:record.category};
 }

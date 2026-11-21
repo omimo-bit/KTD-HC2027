@@ -2,24 +2,26 @@
 
 import { useMemo, useState } from 'react';
 import { LogOut, Menu, X } from 'lucide-react';
+import Image from 'next/image';
+import dynamic from 'next/dynamic';
 import { useAuth } from '@/components/auth-provider';
 import { NAV_BY_ROLE } from '@/lib/campaign';
-import OverviewDashboard from '@/components/overview-dashboard';
-import MudikMap from '@/components/mudik-map';
-import CctvWall from '@/components/cctv-wall';
-import ClientGallery from '@/components/client-gallery';
-import TlClicker from '@/components/tl-clicker';
-import SpgSalesForm from '@/components/spg-sales-form';
-import FieldOperations from '@/components/field-operations';
-import InventoryModule from '@/components/inventory-module';
-import AdminUsers from '@/components/admin-users';
-import VenueSettings from '@/components/venue-settings';
-import MobileSales from '@/components/mobile-sales';
-import MySalesSummary from '@/components/my-sales-summary';
-import LocationTracking from '@/components/location-tracking';
 import LocationReporter from '@/components/location-reporter';
 import OfflineQueueSync from '@/components/offline-queue-sync';
 import type { Role } from '@/lib/types';
+const OverviewDashboard = dynamic(() => import('@/components/overview-dashboard'), { loading: () => <ModuleLoading /> });
+const MudikMap = dynamic(() => import('@/components/mudik-map'), { loading: () => <ModuleLoading /> });
+const CctvWall = dynamic(() => import('@/components/cctv-wall'), { loading: () => <ModuleLoading /> });
+const ClientGallery = dynamic(() => import('@/components/client-gallery'), { loading: () => <ModuleLoading /> });
+const TlClicker = dynamic(() => import('@/components/tl-clicker'), { loading: () => <ModuleLoading /> });
+const SpgSalesForm = dynamic(() => import('@/components/spg-sales-form'), { loading: () => <ModuleLoading /> });
+const FieldOperations = dynamic(() => import('@/components/field-operations'), { loading: () => <ModuleLoading /> });
+const InventoryModule = dynamic(() => import('@/components/inventory-module'), { loading: () => <ModuleLoading /> });
+const AdminUsers = dynamic(() => import('@/components/admin-users'), { loading: () => <ModuleLoading /> });
+const VenueSettings = dynamic(() => import('@/components/venue-settings'), { loading: () => <ModuleLoading /> });
+const MobileSales = dynamic(() => import('@/components/mobile-sales'), { loading: () => <ModuleLoading /> });
+const MySalesSummary = dynamic(() => import('@/components/my-sales-summary'), { loading: () => <ModuleLoading /> });
+function ModuleLoading() { return <div className="panel flex min-h-56 items-center justify-center text-sm text-slate-500">Loading module…</div>; }
 
 export default function DashboardShell() {
   const { user, signOut, token } = useAuth();
@@ -34,7 +36,6 @@ export default function DashboardShell() {
   function renderModule() {
     switch (activeModule) {
       case 'map': return <MudikMap token={token} />;
-      case 'tracking': return <LocationTracking token={token} role={role} />;
       case 'cctv': return <CctvWall token={token} />;
       case 'gallery': return <ClientGallery token={token} />;
       case 'clicker': return <TlClicker token={token} user={user!} />;
@@ -53,9 +54,9 @@ export default function DashboardShell() {
     <div className="min-h-screen bg-slate-50">
       <LocationReporter token={token} user={user} />
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[250px] flex-col border-r border-slate-200 bg-white lg:flex">
-        <div className="border-b border-slate-200 px-6 py-6">
-          <p className="text-sm font-bold tracking-wide text-kd-blue">KRATINGDAENG</p>
-          <p className="mt-1 text-[11px] text-slate-500">Homecoming Activation 2027</p>
+        <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-5">
+          <Image src="/logo-kratingdaeng.png" alt="Kratingdaeng" width={54} height={54} className="h-12 w-12 object-contain" priority />
+          <div><p className="text-sm font-bold tracking-wide text-kd-blue">KRATINGDAENG</p><p className="mt-1 text-[11px] text-slate-500">Homecoming Activation 2027</p></div>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
           <p className="px-3 pb-2 text-[10px] font-bold uppercase tracking-wider text-slate-400">Menu</p>
