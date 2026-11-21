@@ -1,3 +1,4 @@
+import { postGas } from '@/lib/gas-jsonp';
 export type OfflineQueueItem = {
   requestId: string;
   body: string;
@@ -83,17 +84,10 @@ export async function syncOfflineQueue(): Promise<{ sent: number; remaining: num
   try {
     const items = await getOfflineQueue();
     for (const item of items) {
-      const response = await fetch('/api/gas', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: item.body,
-        cache: 'no-store'
-      });
-      const raw = await response.text();
-      let payload: { ok?: boolean; error?: string };
-      try { payload = JSON.parse(raw) as { ok?: boolean; error?: string }; }
-      catch { throw new Error('Server memberi respons non-JSON. Antrean akan dicoba lagi.'); }
-      if (!response.ok || payload.ok !== true) throw new Error(payload.error || `Sinkronisasi gagal (${response.status}).`);
+      let body: Record<string, unknown>;
+      try { body = JSON.parse(item.body) as Record<string, unknown>; }
+      catch { throw new Error('Ada data antrean yang rusak. Hubungi administrator sebelum menghapus antrean.'); }
+      await postGas(body);
       await removeOfflineRequest(item.requestId);
       sent += 1;
     }

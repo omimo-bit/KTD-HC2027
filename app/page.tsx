@@ -1,11 +1,11 @@
 'use client';
 
-import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/components/auth-provider';
+import { appAsset } from '@/lib/config';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -29,7 +29,7 @@ export default function LoginPage() {
     <main className="flex min-h-screen items-center justify-center bg-white px-5 py-10">
       <section className="w-full max-w-[360px]">
         <div className="mb-10 flex flex-col items-center text-center">
-          <Image src="/logo-kratingdaeng.png" alt="Kratingdaeng" width={220} height={97} priority className="h-auto w-[220px] object-contain" />
+          <img src={appAsset('/logo-kratingdaeng.png')} alt="Kratingdaeng" width={220} height={97} fetchPriority="high" className="h-auto w-[220px] object-contain" />
         </div>
         <form onSubmit={submit} className="space-y-4">
           <div>

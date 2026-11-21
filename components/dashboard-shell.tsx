@@ -90,8 +90,8 @@ export default function DashboardShell() {
         <footer className="px-6 pb-6 text-center text-[10px] text-slate-400">KRATINGDAENG HOMECOMING ACTIVATION 2027 · Operations Control Tower</footer>
       </div>
 
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex gap-1 overflow-x-auto border-t border-slate-200 bg-white px-2 py-2 lg:hidden">
-        {nav.map(item => <button key={item.id} onClick={() => select(item.id)} className={`min-w-max rounded-md px-3 py-2 text-[11px] font-semibold ${activeModule === item.id ? 'bg-blue-50 text-kd-blue' : 'text-slate-500'}`}>{item.label}</button>)}
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex gap-1 overflow-x-auto border-t border-slate-200 bg-white px-2 py-2 lg:hidden" style={{ paddingBottom: 'calc(0.5rem + env(safe-area-inset-bottom))' }}>
+        {nav.map(item => <button key={item.id} onClick={() => select(item.id)} className={`min-w-max rounded-md px-3 py-3 text-[11px] font-semibold ${activeModule === item.id ? 'bg-blue-50 text-kd-blue' : 'text-slate-500'}`}>{item.label}</button>)}
       </nav>
     </div>
   );

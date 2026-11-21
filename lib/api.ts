@@ -1,36 +1,15 @@
-import type { ApiEnvelope, AuthSession, DashboardData, Booth, DriveDoc, InventoryItem } from '@/lib/types';
+import type { AuthSession, DashboardData, Booth, DriveDoc, InventoryItem } from '@/lib/types';
 import { enqueueOfflineRequest } from '@/lib/offline-queue';
-
-async function parse<T>(response: Response): Promise<T> {
-  const raw = await response.text();
-  let payload: ApiEnvelope<T>;
-  try {
-    payload = JSON.parse(raw) as ApiEnvelope<T>;
-  } catch {
-    throw new Error(`Respons API bukan JSON (HTTP ${response.status}). Periksa endpoint /api/gas dan deployment Apps Script.`);
-  }
-  if (!response.ok || payload.ok !== true) {
-    const diagnostic = (payload as ApiEnvelope<T> & { diagnostic?: { upstreamStatus?: number; contentType?: string } }).diagnostic;
-    const suffix = diagnostic ? ` [GAS ${diagnostic.upstreamStatus ?? '-'}; ${diagnostic.contentType ?? 'content type tidak diketahui'}]` : '';
-    throw new Error((payload.error || `Request failed (${response.status})`) + suffix);
-  }
-  return payload.data as T;
-}
+import { requestGas, postGas, sendGasNoCors, bytesToBase64, GasTransportError } from '@/lib/gas-jsonp';
 
 export async function apiGet<T>(action: string, token: string, params: Record<string, string> = {}): Promise<T> {
-  // Read actions use POST so the short-lived session token is not exposed in URL query strings.
-  const response = await fetch('/api/gas', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action, token, ...params }),
-    cache: 'no-store'
-  });
-  return parse<T>(response);
+  return requestGas<T>({ action, token, ...params });
 }
 
 const OFFLINE_QUEUEABLE = new Set([
-  'visitorClick', 'recordSale', 'recordSampling', 'saveAttendance', 'saveInventory',
-  'logMobileSale', 'saveClosingReport'
+  'visitorClick', 'recordSale', 'recordSampling', 'redeemPrize', 'saveAttendance',
+  'saveInventory', 'logMobileSale', 'saveClosingReport', 'updateUser', 'createUser',
+  'updateBooth', 'updateInventoryMaster'
 ]);
 
 function makeRequestId(): string {
@@ -39,35 +18,36 @@ function makeRequestId(): string {
     : `kd-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+
 export async function apiPost<T>(action: string, token: string, values: Record<string, unknown> = {}): Promise<T> {
-  const requestId = String(values.requestId || makeRequestId());
-  const body = JSON.stringify({ action, token, ...values, requestId });
-  let response: Response;
+  const transient = action === 'logout' || action === 'locationPing';
+  const requestId = transient ? '' : String(values.requestId || makeRequestId());
+  const body = { action, token, ...values, ...(requestId ? { requestId } : {}) };
+  if (transient) { await sendGasNoCors(body); return { sent: true } as T; }
   try {
-    response = await fetch('/api/gas', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body,
-      cache: 'no-store'
-    });
+    if (action === 'uploadDoc') return await postGas<T>(body, 90000);
+    return await postGas<T>(body, 25000);
   } catch (error) {
-    if (OFFLINE_QUEUEABLE.has(action) && typeof window !== 'undefined') {
-      await enqueueOfflineRequest({ requestId, body, createdAt: Date.now() });
+    if (error instanceof GasTransportError && OFFLINE_QUEUEABLE.has(action) && typeof window !== 'undefined') {
+      await enqueueOfflineRequest({ requestId, body: JSON.stringify(body), createdAt: Date.now() });
       window.dispatchEvent(new Event('kd-offline-queue-change'));
-      throw new Error('Koneksi terputus. Data sudah disimpan sementara di perangkat dan akan dikirim otomatis saat internet kembali. Jangan input ulang transaksi yang sama.');
+      throw new Error('Koneksi terputus. Data disimpan sementara di perangkat dan akan dikirim otomatis saat internet kembali. Jangan input ulang transaksi yang sama.');
     }
     throw error;
   }
-  return parse<T>(response);
 }
 
 export const login = async (username: string, pin: string): Promise<AuthSession> => {
-  const response = await fetch('/api/gas', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action: 'login', username, pin }),
-    cache: 'no-store'
-  });
-  return parse<AuthSession>(response);
+  if (!globalThis.crypto?.subtle) throw new Error('Browser ini tidak mendukung login aman. Buka aplikasi melalui HTTPS atau browser terbaru.');
+  const normalizedUsername = username.trim();
+  const challenge = await requestGas<{ salt: string; nonce: string }>({ action: 'loginChallenge', username: normalizedUsername });
+  const encoder = new TextEncoder();
+  const digest = await crypto.subtle.digest('SHA-256', encoder.encode(`${challenge.salt}|${pin.trim()}`));
+  const pinHash = bytesToBase64(new Uint8Array(digest));
+  const key = await crypto.subtle.importKey('raw', encoder.encode(pinHash), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const signature = await crypto.subtle.sign('HMAC', key, encoder.encode(challenge.nonce));
+  const proof = bytesToBase64(new Uint8Array(signature));
+  return requestGas<AuthSession>({ action: 'loginProof', username: normalizedUsername, nonce: challenge.nonce, proof });
 };
 
 export const getDashboard = (token: string) => apiGet<DashboardData>('dashboard', token);
@@ -77,7 +57,6 @@ export const getInventory = (token: string) => apiGet<InventoryItem[]>('inventor
 export const getMySales = <T = unknown>(token: string) => apiGet<T>('mySales', token);
 export const getVenueSales = <T = unknown>(token: string, venueId = '') => apiGet<T>('venueSales', token, venueId ? { venueId } : {});
 export const getLiveLocations = <T = unknown>(token: string) => apiGet<T>('liveLocations', token);
-
 export const getMobileActivity = <T = unknown>(token: string, venueId = '') => apiGet<T>('mobileActivity', token, venueId ? { venueId } : {});
 export const getInventoryLogs = <T = unknown>(token: string, venueId = '') => apiGet<T>('inventoryLogs', token, venueId ? { venueId } : {});
 export const getDailyClosings = <T = unknown>(token: string, venueId = '') => apiGet<T>('dailyClosings', token, venueId ? { venueId } : {});
