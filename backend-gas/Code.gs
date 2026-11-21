@@ -19,9 +19,9 @@ const APP = {
     Visitors_Log: ['id','timestamp','date','venueId','userId','metric','delta','totalAfter','note'],
     Location_Log: ['id','timestamp','date','userId','name','role','venueId','shift','lat','lng','accuracy','speed','heading','source'],
     Request_Log: ['requestId','timestamp','userId','action','responseJson'],
-    Sales_Sampling: ['id','timestamp','date','venueId','userId','spgName','productMode','packageCode','packageLabel','qty','bottles','cans','revenue','samplingType','cups','igStories','storeCode','luckyDipChances','source'],
+    Sales_Sampling: ['id','timestamp','date','venueId','userId','spgName','productMode','packageCode','packageLabel','qty','bottles','cans','revenue','samplingType','cups','igStories','storeCode','luckyDipChances','source','transactionId'],
     Inventory_Opname: ['id','timestamp','date','venueId','userId','entryType','item','openingQty','closingQty','delta','fromLocation','toLocation','location','shift','note'],
-    Drive_Docs: ['id','timestamp','date','venueId','userId','category','fileName','mimeType','driveFileId','url'],
+    Drive_Docs: ['id','timestamp','date','venueId','userId','category','fileName','mimeType','driveFileId','url','thumbnailUrl'],
     Master_Inventory: ['item','category','initialQty','bufferQty','availableQty','reservedQty','updatedAt'],
     Attendance_Log: ['id','timestamp','date','venueId','userId','staffName','staffRole','shift','eventType','status','photoUrl','note'],
     Activity_Log: ['id','timestamp','date','venueId','userId','activityType','quantity','unit','location','note'],
@@ -64,6 +64,7 @@ function setup() {
   seedBooths_();
   seedInventory_();
   seedUsers_();
+  authorizeDriveAccess();
   getRootFolder_();
   return {ok:true,message:'Setup complete',spreadsheetId:PropertiesService.getScriptProperties().getProperty('SPREADSHEET_ID'),venueCount:VENUES.length};
 }
@@ -137,6 +138,7 @@ function apiAction_(body) {
       case 'visitorClickBatch': requireRole_(user,['ADMIN','TL']); result = visitorClickBatch_(user,body); break;
       case 'locationPing': requireRole_(user,['ADMIN','TL','SPG','CREW']); result = saveLocationPing_(user,body); break;
       case 'recordSale': requireRole_(user,['ADMIN','SPG']); result = recordSale_(user,body); break;
+      case 'recordSaleBatch': requireRole_(user,['ADMIN','SPG']); result = recordSaleBatch_(user,body); break;
       case 'recordSampling': requireRole_(user,['ADMIN','SPG']); result = recordSampling_(user,body); break;
       case 'redeemPrize': requireRole_(user,['ADMIN','SPG']); result = redeemPrize_(user,body); break;
       case 'saveAttendance': requireRole_(user,['ADMIN','TL']); result = saveAttendance_(user,body); break;
@@ -194,6 +196,13 @@ function rows_(name) {
 function append_(name, obj) {
   const sh = sheet_(name); const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
   sh.appendRow(headers.map(h => obj[h] === undefined ? '' : obj[h]));
+}
+function appendMany_(name, objects) {
+  if (!objects || !objects.length) return;
+  const sh = sheet_(name);
+  const headers = sh.getRange(1,1,1,sh.getLastColumn()).getValues()[0].map(String);
+  const rows = objects.map(obj => headers.map(h => obj[h] === undefined ? '' : obj[h]));
+  sh.getRange(sh.getLastRow()+1,1,rows.length,headers.length).setValues(rows);
 }
 function getRequestResult_(requestId,userId) {
   const cache=CacheService.getScriptCache(); const key='request_result_'+userId+'_'+requestId;
@@ -382,7 +391,7 @@ function getDashboard_(user) {
   const uniqueMirror=sum_(visitorRows.filter(r=>r.metric==='UNIQUE_MIRROR'),'delta');
   const photoBooth=sum_(visitorRows.filter(r=>r.metric==='PHOTO_BOOTH'),'delta');
   const bottles=sum_(saleRows,'bottles'); const cans=sum_(saleRows,'cans'); const revenue=sum_(saleRows,'revenue');
-  const sampling=sum_(saleRows,'cups'); const buyers=saleRows.filter(r=>Number(r.bottles||0)+Number(r.cans||0)>0).length;
+  const sampling=sum_(saleRows,'cups'); const buyers=countSaleTransactions_(saleRows);
   const target=booths.reduce((a,b)=>a+Number(b.targetBooth||0)+Number(b.targetIDM||0)+Number(b.targetSelling||0),0);
   const venueStats=booths.map(b=>{
     const vr=visitorRows.filter(r=>String(r.venueId)===String(b.venueId));
@@ -398,7 +407,7 @@ function getDocs_(user,venueId) {
   let docs=rows_('Drive_Docs');
   if(user.role!=='ADMIN' && user.role!=='CLIENT')docs=docs.filter(d=>String(d.venueId)===String(user.venueId));
   else if(venueId)docs=docs.filter(d=>String(d.venueId)===String(venueId));
-  return docs.sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp))).slice(0,500);
+  return docs.sort((a,b)=>String(b.timestamp).localeCompare(String(a.timestamp))).slice(0,500).map(d=>Object.assign({},d,{thumbnailUrl:d.thumbnailUrl || (d.driveFileId?'https://drive.google.com/thumbnail?id='+d.driveFileId+'&sz=w1200':'')}));
 }
 function getUsers_() { return rows_('Users_Access').map(u=>({userId:u.userId,name:u.name,username:u.username,role:u.role,venueId:u.venueId,shift:u.shift,enabled:truthy_(u.enabled),createdAt:u.createdAt,updatedAt:u.updatedAt})); }
 function getInventory_(user) {
@@ -416,7 +425,7 @@ function getMySales_(user,venueId) {
   if(scopeVenue)list=list.filter(r=>String(r.venueId)===String(scopeVenue));
   const todayRows=list.filter(r=>String(r.date)===today_());
   const earned=rows_('LuckyDip_Log').filter(r=>String(r.userId)===String(user.userId) && String(r.date)===today_());
-  return {name:user.name,venueId:scopeVenue||'',today:{bottles:sum_(todayRows,'bottles'),cans:sum_(todayRows,'cans'),revenue:sum_(todayRows,'revenue'),sampling:sum_(todayRows,'cups'),transactions:todayRows.filter(r=>Number(r.bottles||0)+Number(r.cans||0)>0).length},total:{bottles:sum_(list,'bottles'),cans:sum_(list,'cans'),revenue:sum_(list,'revenue'),sampling:sum_(list,'cups'),transactions:list.filter(r=>Number(r.bottles||0)+Number(r.cans||0)>0).length},luckyDip:{earned:sum_(earned.filter(r=>r.entryType==='EARNED'),'chances'),used:sum_(earned.filter(r=>r.entryType==='USED'),'chances'),available:Math.max(0,sum_(earned.filter(r=>r.entryType==='EARNED'),'chances')-sum_(earned.filter(r=>r.entryType==='USED'),'chances'))}};
+  return {name:user.name,venueId:scopeVenue||'',today:{bottles:sum_(todayRows,'bottles'),cans:sum_(todayRows,'cans'),revenue:sum_(todayRows,'revenue'),sampling:sum_(todayRows,'cups'),transactions:countSaleTransactions_(todayRows)},total:{bottles:sum_(list,'bottles'),cans:sum_(list,'cans'),revenue:sum_(list,'revenue'),sampling:sum_(list,'cups'),transactions:countSaleTransactions_(list)},luckyDip:{earned:sum_(earned.filter(r=>r.entryType==='EARNED'),'chances'),used:sum_(earned.filter(r=>r.entryType==='USED'),'chances'),available:Math.max(0,sum_(earned.filter(r=>r.entryType==='EARNED'),'chances')-sum_(earned.filter(r=>r.entryType==='USED'),'chances'))}};
 }
 function getAttendance_(user,date) {
   let list=rows_('Attendance_Log'); if(user.role!=='ADMIN')list=list.filter(r=>String(r.venueId)===user.venueId);
@@ -528,6 +537,68 @@ function recordSale_(user,b) {
   const p=(packages[mode]||{})[code]; if(!p)throw new Error('Paket penjualan tidak valid.');
   return saveSaleRow_(user,venueId,mode,p,qty,'',b);
 }
+function recordSaleBatch_(user,b) {
+  const venueId=String(b.venueId||user.venueId); assertVenue_(user,venueId);
+  const venue=rows_('Master_Booths').find(v=>String(v.venueId)===venueId);
+  if(!venue)throw new Error('Venue tidak ditemukan.');
+  const mode=String(b.productMode|| (venue.type==='PORT'?'PORT':'REST_AREA'));
+  if(!['REST_AREA','PORT','IDM'].includes(mode))throw new Error('Mode penjualan tidak valid.');
+  if((venue.type==='PORT' && mode!=='PORT') || (venue.type==='REST_AREA' && mode==='PORT'))throw new Error('Mode penjualan tidak sesuai jenis venue.');
+  const items=Array.isArray(b.items)?b.items:[];
+  if(!items.length || items.length>20)throw new Error('Pilih minimal 1 dan maksimal 20 jenis paket.');
+  const store=mode==='IDM'?String(b.storeCode||'').trim().toUpperCase():'';
+  if(mode==='IDM') {
+    const allowed=String(venue.idmCodes||'').split(',').map(x=>x.trim().toUpperCase()).filter(Boolean);
+    if(!allowed.includes(store))throw new Error('Store code tidak sesuai dengan venue ini.');
+  }
+  const catalog={
+    REST_AREA:{
+      SINGLE_BOTTLE:{label:'Single Bottle',price:7000,bottles:1,cans:0,units:1},
+      SINGLE_CAN:{label:'Single Can',price:10000,bottles:0,cans:1,units:1},
+      RA_P1:{label:'Package 1 · 3 Btl + 1 Free Btl',price:18000,bottles:4,cans:0,units:4},
+      RA_P2:{label:'Package 2 · 3 Btl + 1 Free Can',price:20000,bottles:3,cans:1,units:4}
+    },
+    PORT:{
+      PORT_P1:{label:'Paket 1 · 3 Botol',price:15000,bottles:3,cans:0,units:3},
+      PORT_P2:{label:'Paket 2 · 2 Botol + 2 Can',price:25000,bottles:2,cans:2,units:4},
+      PORT_P3:{label:'Paket 3 · 4 Botol + 2 Can',price:40000,bottles:4,cans:2,units:6}
+    },
+    IDM:{
+      IDM_PACK3:{label:'Sell-Out Pack 3',price:0,bottles:3,cans:0,units:3},
+      IDM_SINGLE:{label:'Sell-Out Single Bottle',price:0,bottles:1,cans:0,units:1}
+    }
+  };
+  let totalQty=0,totalBottles=0,totalCans=0,totalRevenue=0,totalUnits=0;
+  const now=now_(),date=today_(),transactionId=uuid_(),rows=[];
+  items.forEach(item=>{
+    const code=String(item.packageCode||'');
+    const qty=Math.floor(Number(item.qty||0));
+    if(qty<1 || qty>500)throw new Error('Qty setiap paket harus 1–500.');
+    const product=catalog[mode][code];
+    if(!product)throw new Error('Paket tidak valid: '+code);
+    totalQty+=qty;
+    totalBottles+=product.bottles*qty;
+    totalCans+=product.cans*qty;
+    totalRevenue+=product.price*qty;
+    totalUnits+=product.units*qty;
+    rows.push({
+      id:uuid_(),timestamp:now,date,venueId,userId:user.userId,spgName:String(b.spgName||user.name),
+      productMode:mode,packageCode:code,packageLabel:product.label,qty,
+      bottles:product.bottles*qty,cans:product.cans*qty,revenue:product.price*qty,
+      samplingType:'',cups:0,igStories:0,storeCode:store,luckyDipChances:0,source:mode==='IDM'?'INDOMARET':'BOOTH',transactionId
+    });
+  });
+  if(totalQty<1 || totalQty>500)throw new Error('Total quantity transaksi harus 1–500.');
+  const chances=mode==='IDM'?0:Math.min(Math.floor(totalRevenue/20000),Math.floor(totalUnits/4));
+  if(rows.length)rows[0].luckyDipChances=chances;
+  const lock=LockService.getScriptLock(); lock.waitLock(10000);
+  try {
+    appendMany_('Sales_Sampling',rows);
+    if(chances>0)append_('LuckyDip_Log',{id:uuid_(),timestamp:now,date,venueId,userId:user.userId,entryType:'EARNED',chances,prize:'',tier:''});
+  } finally { lock.releaseLock(); }
+  return {totalQty,totalUnits,lines:rows.length,bottles:totalBottles,cans:totalCans,revenue:totalRevenue,luckyDipChances:chances,message:'Multi-product sale saved.'};
+}
+
 function saveSaleRow_(user,venueId,mode,p,qty,store,b) {
   const bottles=p.bottles*qty,cans=p.cans*qty,revenue=p.price*qty,units=p.units*qty;
   const chances=Math.min(Math.floor(revenue/20000),Math.floor(units/4));
@@ -593,10 +664,34 @@ function saveClosingReport_(user,b) {
 }
 
 /* ---------- Google Drive uploads ---------- */
+function authorizeDriveAccess() {
+  try {
+    const root=DriveApp.getRootFolder();
+    Logger.log('Google Drive authorization OK. Root folder: '+root.getName());
+    return {ok:true,driveAuthorized:true,rootFolderName:root.getName()};
+  } catch(e) {
+    throw new Error('Otorisasi Google Drive belum diberikan atau dibatasi oleh kebijakan akun. Jalankan authorizeDriveAccess() dari editor Apps Script menggunakan akun pemilik deployment, lalu izinkan akses Google Drive. Detail: '+errorMessage_(e));
+  }
+}
 function getRootFolder_() {
-  const props=PropertiesService.getScriptProperties(); const id=props.getProperty('DRIVE_ROOT_FOLDER_ID');
-  if(id) { try { return DriveApp.getFolderById(id); } catch(e) {} }
-  const folder=DriveApp.createFolder(APP.ROOT_FOLDER); props.setProperty('DRIVE_ROOT_FOLDER_ID',folder.getId()); return folder;
+  const props=PropertiesService.getScriptProperties();
+  const id=props.getProperty('DRIVE_ROOT_FOLDER_ID');
+  try {
+    if(id) {
+      try { return DriveApp.getFolderById(id); }
+      catch(e) {
+        const message=errorMessage_(e);
+        if(!/not found|does not exist|invalid argument|trashed/i.test(message))throw e;
+        props.deleteProperty('DRIVE_ROOT_FOLDER_ID');
+      }
+    }
+    const root=DriveApp.getRootFolder();
+    const folder=root.createFolder(APP.ROOT_FOLDER);
+    props.setProperty('DRIVE_ROOT_FOLDER_ID',folder.getId());
+    return folder;
+  } catch(e) {
+    throw new Error('Akses Google Drive ditolak. Pastikan Apps Script dijalankan sebagai pemilik deployment, scope Drive sudah disetujui, dan akun tidak membatasi pembuatan folder. Jalankan authorizeDriveAccess() dari editor Apps Script. Detail: '+errorMessage_(e));
+  }
 }
 function childFolder_(parent,name) {
   const safe=String(name||'Unknown').replace(/[\\/:*?"<>|#%{}~&]/g,'_').slice(0,80);
@@ -611,16 +706,25 @@ function uploadDoc_(user,b) {
   const mime=String(b.mimeType||'application/octet-stream');
   if(!/^(image\/(jpeg|png|webp)|application\/pdf)$/.test(mime))throw new Error('Format file hanya JPG, PNG, WEBP, atau PDF.');
   const date=String(b.date||today_()).replace(/[^0-9-]/g,'').slice(0,10) || today_();
-  const root=getRootFolder_(); const venueFolder=childFolder_(root,String(venue.name)); const dateFolder=childFolder_(venueFolder,date);
+  const root=getRootFolder_();
+  const venueFolder=childFolder_(root,String(venue.name));
+  const dateFolder=childFolder_(venueFolder,date);
   const original=String(b.fileName||('upload-'+Date.now())).replace(/[\\/:*?"<>|]/g,'_').slice(0,100);
   const category=String(b.category||'Field Documentation').replace(/[^a-zA-Z0-9 _-]/g,'').slice(0,35);
   const blob=Utilities.newBlob(bytes,mime,category+'_'+original);
-  const file=dateFolder.createFile(blob); file.setDescription('Mudik 2027 | '+venue.name+' | '+category+' | '+user.name);
-  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  const file=dateFolder.createFile(blob);
+  file.setDescription('Mudik 2027 | '+venue.name+' | '+category+' | '+user.name);
+  try {
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  } catch(shareError) {
+    throw new Error('File sudah dibuat di Google Drive, tetapi akses Anyone with the link ditolak oleh kebijakan Google Workspace. Minta admin Drive mengizinkan berbagi link, atau gunakan akun Drive yang mengizinkan Viewer link. Detail: '+errorMessage_(shareError));
+  }
   const driveId=file.getId();
-  const record={id:uuid_(),timestamp:now_(),date,venueId,userId:user.userId,category,fileName:file.getName(),mimeType:mime,driveFileId:driveId,url:file.getUrl(),thumbnailUrl:'https://drive.google.com/thumbnail?id='+driveId+'&sz=w1200'};
+  const url=file.getUrl();
+  const thumbnailUrl='https://drive.google.com/thumbnail?id='+driveId+'&sz=w1200';
+  const record={id:uuid_(),timestamp:now_(),date,venueId,userId:user.userId,category,fileName:file.getName(),mimeType:mime,driveFileId:driveId,url,thumbnailUrl};
   append_('Drive_Docs',record);
-  return {id:record.id,fileName:record.fileName,url:record.url,category:record.category};
+  return {id:record.id,fileName:record.fileName,url:record.url,thumbnailUrl:record.thumbnailUrl,category:record.category};
 }
 
 /* ---------- Admin configuration ---------- */
@@ -670,5 +774,10 @@ function today_() { return Utilities.formatDate(new Date(),APP.TZ,'yyyy-MM-dd');
 function uuid_() { return Utilities.getUuid(); }
 function randomToken_(bytes) { let value=''; while(value.length<bytes*2)value+=Utilities.getUuid().replace(/-/g,''); return value.slice(0,bytes*2); }
 function sum_(list,key) { return list.reduce((a,x)=>a+(Number(x[key])||0),0); }
+function countSaleTransactions_(list) {
+  const keys={};
+  list.filter(r=>Number(r.bottles||0)+Number(r.cans||0)>0).forEach(r=>{ const key=String(r.transactionId||r.id||('legacy-'+r._row)); keys[key]=true; });
+  return Object.keys(keys).length;
+}
 function truthy_(v) { return v===true || String(v).toLowerCase()==='true' || String(v)==='1'; }
 function errorMessage_(err) { return err && err.message ? err.message : String(err); }

@@ -2,6 +2,7 @@
 
 import { CircleMarker, MapContainer, Popup, TileLayer, useMap } from 'react-leaflet';
 import { useEffect, useRef } from 'react';
+import L from 'leaflet';
 import type { Booth, VenueStats, StaffLocation } from '@/lib/types';
 
 function InitialFit({ booths }: { booths: Booth[] }) {
@@ -28,7 +29,14 @@ export default function LeafletMap({ booths, stats, locations = [], onSelect }: 
         const stat = statMap.get(String(booth.venueId));
         const color = booth.type === 'REST_AREA' ? '#003399' : '#E30613';
         return <CircleMarker key={`venue-${booth.venueId}`} center={[Number(booth.lat), Number(booth.lng)]} radius={10} pathOptions={{ color: '#ffffff', weight: 2.5, fillColor: color, fillOpacity: 1 }} eventHandlers={{ click: () => onSelect(booth) }}>
-          <Popup><div className="min-w-[170px]"><p className="font-bold text-slate-900">{booth.name}</p><p className="mt-1 text-[11px] text-slate-500">{booth.region} · {booth.type === 'REST_AREA' ? 'Rest Area' : 'Pelabuhan'}</p><div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><span>Visitors <b>{Number(stat?.visitors || 0).toLocaleString('id-ID')}</b></span><span>Sales <b>{Number(stat?.bottles || 0).toLocaleString('id-ID')} btl</b></span></div><button className="mt-3 w-full rounded-lg bg-[#003399] px-3 py-2 text-[11px] font-bold text-white" onClick={() => onSelect(booth)}>Open venue detail</button></div></Popup>
+          <Popup eventHandlers={{ click: () => onSelect(booth) }}>
+            <div className="min-w-[170px]">
+              <p className="font-bold text-slate-900">{booth.name}</p>
+              <p className="mt-1 text-[11px] text-slate-500">{booth.region} · {booth.type === 'REST_AREA' ? 'Rest Area' : 'Pelabuhan'}</p>
+              <div className="mt-2 grid grid-cols-2 gap-2 text-[11px]"><span>Visitors <b>{Number(stat?.visitors || 0).toLocaleString('id-ID')}</b></span><span>Sales <b>{Number(stat?.bottles || 0).toLocaleString('id-ID')} btl</b></span></div>
+              <button type="button" className="mt-3 w-full rounded-lg bg-[#003399] px-3 py-2 text-[11px] font-bold text-white" onClick={(event) => { event.preventDefault(); L.DomEvent.stopPropagation(event.nativeEvent); onSelect(booth); }} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onSelect(booth); }}>Open venue detail</button>
+            </div>
+          </Popup>
         </CircleMarker>;
       })}
       {locations.map(person => <CircleMarker key={`staff-${person.userId}`} center={[person.lat, person.lng]} radius={7} pathOptions={{ color: '#fff', weight: 2, fillColor: person.status === 'LIVE' ? '#16803D' : person.status === 'RECENT' ? '#D6A700' : '#64748B', fillOpacity: .95 }}>

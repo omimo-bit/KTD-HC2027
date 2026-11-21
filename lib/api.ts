@@ -24,7 +24,7 @@ function invalidateReadCache() { readCache.clear(); }
 
 
 const OFFLINE_QUEUEABLE = new Set([
-  'visitorClick', 'recordSale', 'recordSampling', 'redeemPrize', 'saveAttendance',
+  'visitorClick', 'recordSale', 'recordSaleBatch', 'recordSampling', 'redeemPrize', 'saveAttendance',
   'saveInventory', 'logMobileSale', 'saveClosingReport', 'updateUser', 'createUser',
   'updateBooth', 'updateInventoryMaster'
 ]);

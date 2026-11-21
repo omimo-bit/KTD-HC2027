@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { LogOut, Menu, X } from 'lucide-react';
-import Image from 'next/image';
+import { appAsset } from '@/lib/config';
 import dynamic from 'next/dynamic';
 import { useAuth } from '@/components/auth-provider';
 import { NAV_BY_ROLE } from '@/lib/campaign';
@@ -55,7 +55,7 @@ export default function DashboardShell() {
       <LocationReporter token={token} user={user} />
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-[250px] flex-col border-r border-slate-200 bg-white lg:flex">
         <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-5">
-          <Image src="/logo-kratingdaeng.png" alt="Kratingdaeng" width={54} height={54} className="h-12 w-12 object-contain" priority />
+          <img src={appAsset('/logo-kratingdaeng.png')} alt="Kratingdaeng" width={76} height={46} className="h-10 w-[76px] shrink-0 object-contain" loading="eager" />
           <div><p className="text-sm font-bold tracking-wide text-kd-blue">KRATINGDAENG</p><p className="mt-1 text-[11px] text-slate-500">Homecoming Activation 2027</p></div>
         </div>
         <nav className="flex-1 space-y-1 overflow-y-auto px-3 py-5">
